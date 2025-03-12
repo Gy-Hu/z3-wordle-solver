@@ -3,7 +3,7 @@ import json
 import logging
 import requests
 import time
-from wordle_words_nltk import ANSWERS, VALID_GUESSES
+import argparse
 import z3
 
 # Configure logging
@@ -15,12 +15,14 @@ logging.basicConfig(
 )
 logging.getLogger().setLevel(logging.INFO)
 
+# Import word lists and API functions
+from wordle_words_nltk import ANSWERS, VALID_GUESSES, make_guess
+
 # Constants
 ANSWER_LEN = 5  # The size of the word, 5 means 5 character word
 ALPHABET_RANGE = False  # Flag to determine should we add an explicit range for each "letter" from 0-25
 VALID_GUESS_COUNT = 10  # The number of valid guesses z3 gets before we give up
 IS_OPTIMIZE = True  # Whether we should use the z3.Solver() or z3.Optimize()
-API_URL = "https://wordle.votee.dev:8000/daily"  # The API URL for the Wordle game
 
 # Preference flags
 PREFER_NO_DUPLICATE_CHARS = True  # Only use duplicate characters in words when we have to
@@ -49,19 +51,6 @@ def get_current_model_word(letters, model, alphabet):
     Get the current string representation of the model
     """
     return ''.join([alphabet[model[letter_key].as_long()] for letter_key in letters])
-
-
-def make_guess(word):
-    """
-    Make a guess to the Wordle API and get the result
-    """
-    try:
-        response = requests.get(f"{API_URL}?guess={word}")
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logging.error(f"Error making guess: {e}")
-        return None
 
 
 def process_guess_result(guess, guess_result):
@@ -135,9 +124,9 @@ def process_guess_result(guess, guess_result):
     )
 
 
-def solve_wordle_api_norvig():
+def solve_wordle_api_norvig(mode="daily", **kwargs):
     """
-    Solve the Wordle puzzle using the API with Strategy 22 (Norvig's strategy)
+    Solve the Wordle puzzle using the API with Strategy 22 (Norvig's strategy) in the specified mode
     """
     start_time = time.time()
     
@@ -187,7 +176,7 @@ def solve_wordle_api_norvig():
         logging.info(f"Making Norvig guess: {norvig_guess}")
         
         # Make the guess
-        guess_result = make_guess(norvig_guess)
+        guess_result = make_guess(norvig_guess, mode=mode, **kwargs)
         if not guess_result:
             logging.error(f"Failed to get result for guess: {norvig_guess}")
             return None
@@ -261,7 +250,7 @@ def solve_wordle_api_norvig():
         guessed.append(guess)
         
         # Make the guess
-        guess_result = make_guess(guess)
+        guess_result = make_guess(guess, mode=mode, **kwargs)
         if not guess_result:
             logging.error(f"Failed to get result for guess: {guess}")
             break
@@ -320,15 +309,83 @@ def solve_wordle_api_norvig():
     return Result(guessed, tts)
 
 
+def solve_daily():
+    """
+    Solve the daily Wordle puzzle
+    """
+    logging.info("Starting Wordle API Solver with Norvig's Strategy (Strategy 22) in DAILY mode")
+    result = solve_wordle_api_norvig(mode="daily")
+    if result:
+        logging.info(f"Result: {result}")
+    else:
+        logging.error("Failed to solve the puzzle")
+    return result
+
+
+def solve_random(seed=None):
+    """
+    Solve a random Wordle puzzle
+    
+    Args:
+        seed (int, optional): Random seed for reproducible results. Defaults to None.
+    """
+    seed_info = f" with seed {seed}" if seed is not None else ""
+    logging.info(f"Starting Wordle API Solver with Norvig's Strategy (Strategy 22) in RANDOM mode{seed_info}")
+    result = solve_wordle_api_norvig(mode="random", seed=seed)
+    if result:
+        logging.info(f"Result: {result}")
+    else:
+        logging.error("Failed to solve the puzzle")
+    return result
+
+
+def solve_word(target_word):
+    """
+    Solve a Wordle puzzle with a specific target word
+    
+    Args:
+        target_word (str): The target word to guess
+    """
+    logging.info(f"Starting Wordle API Solver with Norvig's Strategy (Strategy 22) in WORD mode for target: {target_word}")
+    result = solve_wordle_api_norvig(mode="word", target_word=target_word)
+    if result:
+        logging.info(f"Result: {result}")
+    else:
+        logging.error("Failed to solve the puzzle")
+    return result
+
+
+def parse_arguments():
+    """
+    Parse command line arguments
+    """
+    parser = argparse.ArgumentParser(description="Solve Wordle puzzles using Z3 and Norvig's strategy")
+    parser.add_argument("--mode", choices=["daily", "random", "word"], default="daily",
+                        help="Game mode: daily, random, or word (default: daily)")
+    parser.add_argument("--seed", type=int, help="Random seed for random mode")
+    parser.add_argument("--target", help="Target word for word mode")
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    logging.info("Starting Wordle API Solver with Norvig's Strategy (Strategy 22) using NLTK word lists")
     # First, check if Norvig guesses are in our word lists
     for word in NORVIG_GUESSES:
         if word not in COMMON_WORDS:
             logging.warning(f"Warning: Norvig guess '{word}' is not in our NLTK-based word list")
     
-    result = solve_wordle_api_norvig()
-    if result:
-        logging.info(f"Result: {result}")
-    else:
-        logging.error("Failed to solve the puzzle")
+    # Parse command line arguments
+    args = parse_arguments()
+    
+    # Solve the puzzle based on the selected mode
+    if args.mode == "daily":
+        solve_daily()
+    elif args.mode == "random":
+        solve_random(seed=args.seed)
+    elif args.mode == "word":
+        if not args.target:
+            logging.error("Target word is required for word mode")
+            exit(1)
+        if len(args.target) != ANSWER_LEN:
+            logging.error(f"Target word must be {ANSWER_LEN} characters long")
+            exit(1)
+        solve_word(args.target)

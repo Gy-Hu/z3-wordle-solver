@@ -1,5 +1,8 @@
 import nltk
 from nltk.corpus import words
+import requests
+import logging
+import json
 
 def get_wordle_word_lists():
     """
@@ -34,6 +37,106 @@ def get_wordle_word_lists():
     valid_guesses = sorted_words[answers_count:]
     
     return answers, valid_guesses
+
+# API URLs for different game modes
+API_URLS = {
+    "daily": "https://wordle.votee.dev:8000/daily",
+    "random": "https://wordle.votee.dev:8000/random",
+    "word": "https://wordle.votee.dev:8000/word"
+}
+
+def make_guess_daily(word, size=5):
+    """
+    Make a guess to the Wordle API in daily mode
+    
+    Args:
+        word (str): The word to guess
+        size (int, optional): The size of the word. Defaults to 5.
+        
+    Returns:
+        list: The result of the guess, or None if there was an error
+    """
+    try:
+        response = requests.get(f"{API_URLS['daily']}?guess={word}&size={size}")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Error making daily guess: {e}")
+        return None
+
+def make_guess_random(word, size=5, seed=None):
+    """
+    Make a guess to the Wordle API in random mode
+    
+    Args:
+        word (str): The word to guess
+        size (int, optional): The size of the word. Defaults to 5.
+        seed (int, optional): Random seed for reproducible results. Defaults to None.
+        
+    Returns:
+        list: The result of the guess, or None if there was an error
+    """
+    try:
+        url = f"{API_URLS['random']}?guess={word}&size={size}"
+        if seed is not None:
+            url += f"&seed={seed}"
+        response = requests.get(url)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Error making random guess: {e}")
+        return None
+
+def make_guess_word(target_word, guess_word):
+    """
+    Make a guess to the Wordle API in word mode (guess against a specific word)
+    
+    Args:
+        target_word (str): The target word to guess against
+        guess_word (str): The word to guess
+        
+    Returns:
+        list: The result of the guess, or None if there was an error
+    """
+    try:
+        response = requests.get(f"{API_URLS['word']}/{target_word}?guess={guess_word}")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Error making word guess: {e}")
+        return None
+
+def make_guess(word, mode="daily", **kwargs):
+    """
+    Make a guess to the Wordle API in the specified mode
+    
+    Args:
+        word (str): The word to guess
+        mode (str, optional): The game mode ("daily", "random", or "word"). Defaults to "daily".
+        **kwargs: Additional arguments for the specific mode:
+            - For "daily" mode: size (int, optional)
+            - For "random" mode: size (int, optional), seed (int, optional)
+            - For "word" mode: target_word (str, required)
+            
+    Returns:
+        list: The result of the guess, or None if there was an error
+    """
+    if mode == "daily":
+        size = kwargs.get("size", 5)
+        return make_guess_daily(word, size)
+    elif mode == "random":
+        size = kwargs.get("size", 5)
+        seed = kwargs.get("seed", None)
+        return make_guess_random(word, size, seed)
+    elif mode == "word":
+        target_word = kwargs.get("target_word")
+        if not target_word:
+            logging.error("Target word is required for word mode")
+            return None
+        return make_guess_word(target_word, word)
+    else:
+        logging.error(f"Unknown mode: {mode}")
+        return None
 
 # Export word lists for direct import by other modules
 ANSWERS, VALID_GUESSES = get_wordle_word_lists()
